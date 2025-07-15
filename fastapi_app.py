@@ -5,8 +5,14 @@ import whisper
 import tempfile
 import os
 import torch
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.model = whisper.load_model('base')
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 # Allow CORS for local frontend development
 app.add_middleware(
@@ -19,12 +25,12 @@ app.add_middleware(
 
 @app.post("/api/transcribe/")
 async def transcribe_audio(audio: UploadFile = File(...)):
+    model = app.state.model
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as tmp:
             content = await audio.read()
             tmp.write(content)
             tmp_path = tmp.name
-        model = whisper.load_model('base')
         result = model.transcribe(tmp_path, language='en', fp16=torch.cuda.is_available())
         os.remove(tmp_path)
         return {"transcription": result['text']}
